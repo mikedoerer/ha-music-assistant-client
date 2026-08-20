@@ -1,0 +1,156 @@
+blueprint:
+  domain: automation
+  name: Music Assistant - Playlist Creation (DE)
+  source_url: https://github.com/mikedoerer/ha-music-assistant-client/blob/main/blueprints/mass_playlist_de.yaml
+  description: >-
+    Companion blueprint to "Music Assistant - Local LLM Enhanced Voice Support
+    Blueprint (DE fork)" for a separate voice intent: instead of playing music,
+    this asks the configured LLM agent for ~50 track suggestions matching the
+    spoken request, resolves each one to a real Music Assistant track via
+    music_assistant.search, and saves the result as a real, named playlist via
+    the mass_playlist.create_and_fill service (see
+    https://github.com/mikedoerer/ha-music-assistant-client). Kept as its own
+    automation/blueprint rather than a second branch in llm_enhanced_de.yaml,
+    per explicit request - playlist creation shares no target/player logic
+    with plain playback, so there is nothing to gain from merging them.
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    llm_agent:
+      name: LLM conversation agent
+      description: The LLM agent used to generate playlist track suggestions
+      selector:
+        entity:
+          filter:
+          - domain:
+            - conversation
+          multiple: false
+    mass_config_entry:
+      name: Music Assistant integration
+      description: The Music Assistant config entry used to resolve suggested
+        tracks to real media URIs via music_assistant.search
+      selector:
+        config_entry:
+          filter:
+          - integration: music_assistant
+    response_settings:
+      name: Trigger and response settings for Assist
+      icon: mdi:chat
+      description: Adjust the trigger sentence(s) and the spoken responses here.
+        <playlist_name> and <count> are replaced with the created playlist's
+        name and how many tracks were actually added.
+      collapsed: true
+      input:
+        trigger:
+          name: Conversation trigger sentences
+          description: Put text between square brackets [ ] to make it optional,
+            with round brackets ( ) and a pipe character | for alternatives.
+            { query } is a wildcard containing what kind of playlist was requested.
+          selector:
+            text:
+              multiline: false
+              multiple: true
+          default:
+          - (erstelle|leg an) [mir] [eine] playlist {query}
+        created_response:
+          name: Playlist created response
+          description: Spoken confirmation once the playlist has been created
+          selector:
+            text:
+              multiline: false
+              multiple: false
+          default: Playlist <playlist_name> mit <count> Titeln erstellt
+        no_tracks_response:
+          name: No tracks resolved response
+          description: Spoken response if not a single suggested track could be
+            resolved to a real Music Assistant track (no playlist is created
+            in this case)
+          selector:
+            text:
+              multiline: false
+              multiple: false
+          default: Ich konnte leider keinen passenden Titel dafuer finden
+    prompt_settings:
+      name: Prompt setting for the LLM
+      icon: mdi:robot
+      description: Finetune the prompt used to ask the LLM for playlist suggestions.
+        In most cases the default should be fine.
+      collapsed: true
+      input:
+        llm_prompt:
+          name: Playlist suggestion LLM prompt
+          description: The prompt sent to the LLM agent. Must instruct it to reply
+            with only the JSON described here - the automation parses this exact
+            shape.
+          selector:
+            text:
+              multiline: true
+              multiple: false
+          default: >-
+            Du bist ein Musik-Kurator. Erstelle basierend auf der folgenden
+            Sprachanfrage einen Vorschlag fuer eine Playlist mit genau 50
+            echten, existierenden Musiktiteln, die gut zur Anfrage passen.
+            Antworte AUSSCHLIESSLICH mit folgendem JSON-Format, ohne
+            Erklaerungen, ohne Code-Tags, ohne Markdown: {"playlist_name":
+            "Kurzer, passender Playlist-Name", "tracks": [{"artist":
+            "Interpret", "title": "Titel"}, ...]}. Die Sprachanfrage lautet:
+            "{{ trigger.sentence }}"
+triggers:
+- alias: Trigger to request a new playlist
+  trigger: conversation
+  command: !input trigger
+actions:
+- alias: Store blueprint inputs in variables
+  variables:
+    version: 20260820-de1
+    llm_prompt: !input llm_prompt
+    created_response: !input created_response
+    no_tracks_response: !input no_tracks_response
+- alias: Ask the LLM for playlist suggestions
+  action: conversation.process
+  data:
+    text: '{{ llm_prompt }}'
+    agent_id: !input llm_agent
+  response_variable: llm_result
+- alias: Parse the LLM's JSON response
+  variables:
+    playlist_suggestion: '{{ llm_result.response.speech.plain.speech | from_json }}'
+    suggested_name: '{{ trigger.slots.query | default(trigger.sentence, true) }}'
+- alias: Prepare namespace to collect resolved URIs
+  variables:
+    ns: '{{ namespace(uris=[]) }}'
+- repeat:
+    for_each: '{{ playlist_suggestion.tracks }}'
+    sequence:
+    - alias: Resolve one suggested track via Music Assistant search
+      action: music_assistant.search
+      data:
+        config_entry_id: !input mass_config_entry
+        name: '{{ repeat.item.title }}'
+        artist: '{{ repeat.item.artist | default('''', true) }}'
+        media_type:
+        - track
+      response_variable: search_result
+    - alias: Keep the best match's URI if one was found
+      variables:
+        ns: '{{ ns }}'
+        _collect: '{{ ns.uris.append(search_result.tracks[0].uri) if search_result.tracks
+          else none }}'
+- alias: Only create a playlist when at least one track resolved
+  if:
+  - condition: template
+    value_template: '{{ ns.uris | count > 0 }}'
+  then:
+  - alias: Create and fill the playlist
+    action: mass_playlist.create_and_fill
+    data:
+      name: '{{ playlist_suggestion.playlist_name | default(suggested_name, true) }}'
+      uris: '{{ ns.uris }}'
+    response_variable: create_result
+  - alias: Confirm the created playlist
+    set_conversation_response: '{{ created_response | replace(''<playlist_name>'',
+      create_result.name) | replace(''<count>'', create_result.requested | string) }}'
+  else:
+  - alias: Report that nothing could be resolved
+    set_conversation_response: '{{ no_tracks_response }}'
+mode: parallel
