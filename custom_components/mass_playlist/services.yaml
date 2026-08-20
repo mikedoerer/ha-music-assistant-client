@@ -1,0 +1,32 @@
+create_and_fill:
+  name: Create and fill playlist
+  description: >-
+    Creates a new playlist in Music Assistant and adds the given tracks to
+    it, in a single WebSocket connection. Track URIs must already be
+    resolved Music Assistant media URIs (e.g. via the music_assistant.search
+    service) - not free-text search terms.
+  fields:
+    name:
+      name: Name
+      description: Name of the playlist to create.
+      required: true
+      example: "Rock der 90er"
+      selector:
+        text:
+    uris:
+      name: Track URIs
+      description: >-
+        List of resolved Music Assistant track URIs to add to the new
+        playlist. Must not be empty.
+      required: true
+      selector:
+        object:
+    provider_instance_or_domain:
+      name: Provider
+      description: >-
+        Provider instance id or domain to create the playlist on. Omit to
+        use Music Assistant's built-in local playlist provider (no
+        streaming-account write access needed).
+      required: false
+      selector:
+        text:

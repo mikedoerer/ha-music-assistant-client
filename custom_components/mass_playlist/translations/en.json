@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Music Assistant Playlist Bridge",
+        "description": "Registers the mass_playlist.create_and_fill service. Installed once - no configuration needed."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Music Assistant Playlist Bridge is already set up - only one instance is needed."
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "mass_playlist",
+  "name": "Music Assistant Playlist Bridge",
+  "codeowners": ["@mikedoerer"],
+  "config_flow": true,
+  "after_dependencies": ["music_assistant"],
+  "documentation": "https://github.com/mikedoerer/ha-music-assistant-client",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/mikedoerer/ha-music-assistant-client/issues",
+  "requirements": ["music-assistant-client==1.5.1"],
+  "version": "0.1.0"
+}
