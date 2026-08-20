@@ -31,8 +31,7 @@ blueprint:
         tracks to real media URIs via music_assistant.search
       selector:
         config_entry:
-          filter:
-          - integration: music_assistant
+          integration: music_assistant
     response_settings:
       name: Trigger and response settings for Assist
       icon: mdi:chat
@@ -116,9 +115,9 @@ actions:
   variables:
     playlist_suggestion: '{{ llm_result.response.speech.plain.speech | from_json }}'
     suggested_name: '{{ trigger.slots.query | default(trigger.sentence, true) }}'
-- alias: Prepare namespace to collect resolved URIs
+- alias: Prepare list to collect resolved URIs
   variables:
-    ns: '{{ namespace(uris=[]) }}'
+    resolved_uris: []
 - repeat:
     for_each: '{{ playlist_suggestion.tracks }}'
     sequence:
@@ -133,19 +132,18 @@ actions:
       response_variable: search_result
     - alias: Keep the best match's URI if one was found
       variables:
-        ns: '{{ ns }}'
-        _collect: '{{ ns.uris.append(search_result.tracks[0].uri) if search_result.tracks
-          else none }}'
+        resolved_uris: '{{ resolved_uris + [search_result.tracks[0].uri] if search_result.tracks
+          else resolved_uris }}'
 - alias: Only create a playlist when at least one track resolved
   if:
   - condition: template
-    value_template: '{{ ns.uris | count > 0 }}'
+    value_template: '{{ resolved_uris | count > 0 }}'
   then:
   - alias: Create and fill the playlist
     action: mass_playlist.create_and_fill
     data:
       name: '{{ playlist_suggestion.playlist_name | default(suggested_name, true) }}'
-      uris: '{{ ns.uris }}'
+      uris: '{{ resolved_uris }}'
     response_variable: create_result
   - alias: Confirm the created playlist
     set_conversation_response: '{{ created_response | replace(''<playlist_name>'',
